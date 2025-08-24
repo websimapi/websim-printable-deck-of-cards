@@ -1,0 +1,171 @@
+:root {
+    --card-aspect-ratio: 1.4; /* 3.5 / 2.5 */
+    --card-width-mobile: 22vw;
+    --card-width-desktop: 120px;
+    --red-suit: #D90429;
+    --black-suit: #2B2D42;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #f0f2f5;
+    margin: 0;
+    padding: 1rem;
+    color: #333;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+header p {
+    color: #666;
+}
+
+#print-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #fff;
+    background-color: #007bff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+#print-btn:hover {
+    background-color: #0056b3;
+}
+
+#card-deck {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-width-mobile), 1fr));
+    gap: 1rem;
+    padding: 0;
+    margin: 0 auto;
+    max-width: 1200px;
+}
+
+.card {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    width: 100%;
+    aspect-ratio: 1 / var(--card-aspect-ratio);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    position: relative;
+    font-size: calc(var(--card-width-mobile) / 4);
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.card.color-red {
+    color: var(--red-suit);
+}
+
+.card.color-black {
+    color: var(--black-suit);
+}
+
+.corner {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+}
+
+.corner .rank {
+    font-size: 1.2em;
+}
+
+.corner .suit {
+    font-size: 1em;
+}
+
+.corner.top-left {
+    top: 0.5em;
+    left: 0.5em;
+}
+
+.corner.bottom-right {
+    bottom: 0.5em;
+    right: 0.5em;
+    transform: rotate(180deg);
+}
+
+.center-suit {
+    font-size: 2.5em;
+    opacity: 0.9;
+}
+
+
+/* Larger screen adjustments */
+@media (min-width: 768px) {
+    #card-deck {
+        grid-template-columns: repeat(auto-fill, minmax(var(--card-width-desktop), 1fr));
+    }
+    .card {
+         font-size: calc(var(--card-width-desktop) / 4);
+    }
+}
+
+
+/* Print Styles */
+@media print {
+    @page {
+        margin: 0.5in;
+    }
+
+    body {
+        background-color: #fff;
+        margin: 0;
+        padding: 0;
+    }
+
+    header {
+        display: none;
+    }
+
+    #card-deck {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0;
+        page-break-inside: avoid;
+    }
+
+    .card {
+        width: 2.5in;
+        height: 3.5in;
+        border: 1px dotted #999; /* Cutting guide */
+        box-shadow: none;
+        border-radius: 10px; /* Rounded corners for cutting */
+        font-size: 32pt;
+        page-break-inside: avoid;
+    }
+
+    .corner.top-left {
+        top: 0.25in;
+        left: 0.25in;
+    }
+
+    .corner.bottom-right {
+        bottom: 0.25in;
+        right: 0.25in;
+    }
+
+    .center-suit {
+        font-size: 72pt;
+    }
+}
+
