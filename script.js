@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeInput = document.getElementById('theme-input');
     const loader = document.getElementById('loader');
     const progressText = document.getElementById('progress-text');
+    const scaleSlider = document.getElementById('scale-slider');
+    const scaleControl = document.querySelector('.scale-control');
 
     // Utility functions for error handling and retries
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -144,6 +146,56 @@ document.addEventListener('DOMContentLoaded', () => {
         throw lastError;
     }
 
+    // --- Local Storage Functions ---
+    function saveDeckToLocalStorage(deckData) {
+        try {
+            localStorage.setItem('savedDeck', JSON.stringify(deckData));
+        } catch (e) {
+            console.error("Failed to save deck to localStorage:", e);
+        }
+    }
+
+    function loadDeckFromLocalStorage() {
+        try {
+            const savedDeckJSON = localStorage.getItem('savedDeck');
+            if (savedDeckJSON) {
+                return JSON.parse(savedDeckJSON);
+            }
+        } catch (e) {
+            console.error("Failed to load deck from localStorage:", e);
+            localStorage.removeItem('savedDeck'); // Clear corrupted data
+        }
+        return null;
+    }
+
+    function clearSavedDeck() {
+        localStorage.removeItem('savedDeck');
+        console.log("Saved deck cleared from localStorage.");
+    }
+    
+    // --- Image Scale Functions ---
+    function applyImageScale(scale) {
+        document.documentElement.style.setProperty('--card-image-scale', scale);
+    }
+
+    function saveImageScale(scale) {
+        localStorage.setItem('cardImageScale', scale);
+    }
+
+    function loadImageScale() {
+        const savedScale = localStorage.getItem('cardImageScale');
+        if (savedScale) {
+            scaleSlider.value = savedScale;
+            applyImageScale(savedScale);
+        }
+    }
+    
+    scaleSlider.addEventListener('input', (e) => {
+        const newScale = e.target.value;
+        applyImageScale(newScale);
+        saveImageScale(newScale);
+    });
+
     async function safeImageGeneration(prompt, retries = 3) {
         return await withRetry(async () => {
             try {
@@ -160,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 throw new Error(`Image generation failed: ${error.message}`);
             }
-        }, retries, 2000);
+        }, retries, 1000);
     }
 
     async function safeFileUpload(file, retries = 3) {
@@ -236,12 +288,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateDeck() {
         cardDeck.innerHTML = ''; // Clear existing cards
+        const savedDeck = loadDeckFromLocalStorage();
+        let hasArt = false;
+        
+        if (savedDeck && savedDeck.theme) {
+            themeInput.value = savedDeck.theme;
+        }
 
         for (const suit of suits) {
             for (const rank of ranks) {
                 const card = createCardElement(suit, rank);
+                
+                // Check for saved art
+                if (savedDeck && savedDeck.cards) {
+                    const cardData = savedDeck.cards[`${rank}-${suit}`];
+                    if (cardData && cardData.imageUrl) {
+                        const centerSuit = card.querySelector('.center-suit');
+                        centerSuit.innerHTML = `<img src="${cardData.imageUrl}" alt="Themed art for ${rank} of ${suit}">`;
+                        hasArt = true;
+                    }
+                }
                 cardDeck.appendChild(card);
             }
+        }
+        
+        if (hasArt) {
+            scaleControl.classList.remove('hidden');
+        } else {
+            scaleControl.classList.add('hidden');
         }
     }
 
@@ -287,6 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const superPrompts = {}; // To store the base prompt for each rank
         let successfulCards = 0;
         let failedCards = 0;
+        const generatedCardsData = {}; // To store results for localStorage
 
         try {
             // STAGE 1: Generate a single art style guide for the whole deck.
@@ -349,6 +424,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const result = await safeImageGeneration(finalPrompt);
                     console.log(`Generated ${rankName} of ${suit}:`, result.url);
+                    
+                    // Store for saving
+                    generatedCardsData[`${rank}-${suit}`] = { imageUrl: result.url };
 
                     let centerSuit = card.querySelector('.center-suit');
                     if (centerSuit) {
@@ -364,6 +442,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         centerSuit.innerHTML = `<span title="Generation failed: ${cardError.message}">⚠️</span>`;
                     }
                 }
+            }
+
+            if (successfulCards > 0) {
+                 const deckData = {
+                    theme: theme,
+                    style: styleDescription,
+                    cards: generatedCardsData,
+                };
+                saveDeckToLocalStorage(deckData);
+                scaleControl.classList.remove('hidden');
             }
             
             const finalMessage = `Generation Complete! ${successfulCards} successful, ${failedCards} failed.`;
@@ -426,8 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     generateBtn.addEventListener('click', applyTheme);
-    resetBtn.addEventListener('click', generateDeck);
+    
+    resetBtn.addEventListener('click', () => {
+        clearSavedDeck();
+        themeInput.value = '';
+        generateDeck();
+    });
 
     // Initial deck generation
+    loadImageScale();
     generateDeck();
 });
