@@ -91,20 +91,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 centerSuit.innerHTML = `<img src="${imageUrl}" alt="Themed card art for Ace of Hearts">`;
             }
 
-            // 2. Get a detailed description of the generated image by first uploading it
-            progressText.textContent = 'Uploading style leader for analysis...';
-            const response = await fetch(imageUrl);
-            const blob = await response.blob();
-            const file = new File([blob], "style-leader.png", { type: blob.type });
-            const uploadedUrl = await websim.upload(file);
-
+            // 2. Get a detailed description of the generated image by using its URL directly.
+            // No need to download and re-upload the image.
             progressText.textContent = 'Analyzing art style...';
             const descriptionCompletion = await websim.chat.completions.create({
                 messages: [{
                     role: 'user',
                     content: [
                         { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts).' },
-                        { type: 'image_url', image_url: { url: uploadedUrl } },
+                        { type: 'image_url', image_url: { url: imageUrl } },
                     ],
                 }],
             });
