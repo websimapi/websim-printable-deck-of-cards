@@ -58,36 +58,43 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const cards = document.querySelectorAll('.card');
+        const cards = Array.from(document.querySelectorAll('.card'));
         loader.classList.remove('hidden');
         generateBtn.disabled = true;
         resetBtn.disabled = true;
         printBtn.disabled = true;
 
-        const imagePromises = Array.from(cards).map(card => {
-            const rank = card.dataset.rank;
-            const suit = card.dataset.suit;
-            const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
-
-            const prompt = `Simple, centered icon representing the ${rankName} of ${suit}, with a "${theme}" theme. Clean lines, vector style icon.`;
-
-            return websim.imageGen({
-                prompt: prompt,
-                transparent: true,
-            }).then(result => ({ card, url: result.url }));
-        });
+        const batchSize = 5; // Process images in smaller batches
 
         try {
-             const results = await Promise.all(imagePromises);
-             results.forEach(({ card, url }) => {
-                const centerSuit = card.querySelector('.center-suit');
-                if (centerSuit) {
-                    centerSuit.innerHTML = `<img src="${url}" alt="Themed card art">`;
-                }
-            });
-        } catch(error) {
+            for (let i = 0; i < cards.length; i += batchSize) {
+                const batch = cards.slice(i, i + batchSize);
+                const imagePromises = batch.map(card => {
+                    const rank = card.dataset.rank;
+                    const suit = card.dataset.suit;
+                    const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
+
+                    const prompt = `Simple, centered icon representing the ${rankName} of ${suit}, with a "${theme}" theme. Clean lines, vector style icon.`;
+
+                    return websim.imageGen({
+                        prompt: prompt,
+                        transparent: true,
+                    }).then(result => ({ card, url: result.url }));
+                });
+
+                const batchResults = await Promise.all(imagePromises);
+
+                batchResults.forEach(({ card, url }) => {
+                    const centerSuit = card.querySelector('.center-suit');
+                    if (centerSuit) {
+                        centerSuit.innerHTML = `<img src="${url}" alt="Themed card art for ${card.dataset.rank} of ${card.dataset.suit}">`;
+                    }
+                });
+            }
+        } catch (error) {
             console.error("Error generating images:", error);
-            alert("Sorry, there was an error generating the card art. Please try again.");
+            const errorMessage = `Sorry, there was an error generating the card art. Please try again.\n\nError details:\n${error.message}`;
+            alert(errorMessage);
         } finally {
             loader.classList.add('hidden');
             generateBtn.disabled = false;
