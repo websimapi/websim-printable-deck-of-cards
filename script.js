@@ -189,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Attempting chat completion with messages:', JSON.stringify(messages, null, 2));
                 
                 const completion = await websim.chat.completions.create({
+                    model: "gpt-4o", // Explicitly use a multimodal model
                     messages: messages,
                 });
                 
@@ -327,8 +328,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const uploadedUrl = await safeFileUpload(imageFile);
             console.log('Uploaded image to:', uploadedUrl);
 
-            // Add delay before AI analysis
-            await sleep(1000);
+            // Add a longer delay before AI analysis to ensure file is ready
+            await sleep(3000);
 
             // 3. Get a detailed description of the generated image using the uploaded URL
             progressText.textContent = 'Analyzing art style...';
@@ -336,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const messages = [{
                 role: 'user',
                 content: [
-                    { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts). Keep it concise but detailed.' },
+                    { type: 'text', text: 'Describe the art style of this image for a consistent theme. Focus on style, color palette, and line work. Be concise.' },
                     { type: 'image_url', image_url: { url: uploadedUrl } },
                 ],
             }];
