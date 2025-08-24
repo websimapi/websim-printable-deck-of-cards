@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cardDeck = document.getElementById('card-deck');
     const printBtn = document.getElementById('print-btn');
+    const generateBtn = document.getElementById('generate-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const themeInput = document.getElementById('theme-input');
+    const loader = document.getElementById('loader');
 
     function generateDeck() {
         cardDeck.innerHTML = ''; // Clear existing cards
@@ -47,11 +51,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return card;
     }
 
+    async function applyTheme() {
+        const theme = themeInput.value.trim();
+        if (!theme) {
+            alert('Please enter a theme.');
+            return;
+        }
+
+        const cards = document.querySelectorAll('.card');
+        loader.classList.remove('hidden');
+        generateBtn.disabled = true;
+        resetBtn.disabled = true;
+        printBtn.disabled = true;
+
+        const imagePromises = Array.from(cards).map(card => {
+            const rank = card.dataset.rank;
+            const suit = card.dataset.suit;
+            const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
+
+            const prompt = `Simple, centered icon representing the ${rankName} of ${suit}, with a "${theme}" theme. Clean lines, vector style icon.`;
+
+            return websim.imageGen({
+                prompt: prompt,
+                transparent: true,
+            }).then(result => ({ card, url: result.url }));
+        });
+
+        try {
+             const results = await Promise.all(imagePromises);
+             results.forEach(({ card, url }) => {
+                const centerSuit = card.querySelector('.center-suit');
+                if (centerSuit) {
+                    centerSuit.innerHTML = `<img src="${url}" alt="Themed card art">`;
+                }
+            });
+        } catch(error) {
+            console.error("Error generating images:", error);
+            alert("Sorry, there was an error generating the card art. Please try again.");
+        } finally {
+            loader.classList.add('hidden');
+            generateBtn.disabled = false;
+            resetBtn.disabled = false;
+            printBtn.disabled = false;
+        }
+    }
+
     printBtn.addEventListener('click', () => {
         window.print();
     });
 
+    generateBtn.addEventListener('click', applyTheme);
+    resetBtn.addEventListener('click', generateDeck);
+
     // Initial deck generation
     generateDeck();
 });
-
