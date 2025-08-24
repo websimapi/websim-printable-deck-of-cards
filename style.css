@@ -177,8 +177,8 @@ header p {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 80%;
-    height: 80%;
+    width: 100%;
+    height: 100%;
 }
 
 .center-suit img {
@@ -245,7 +245,7 @@ header p {
 
     .center-suit {
         font-size: 72pt;
-        width: 1.5in; /* 60% of 2.5in */
-        height: 2.1in; /* 60% of 3.5in */
+        width: 2.2in; /* 88% of 2.5in */
+        height: 3.1in; /* 88% of 3.5in */
     }
 }

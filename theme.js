@@ -11,7 +11,15 @@ export async function applyTheme(app) {
         return;
     }
 
-    const cards = Array.from(cardDeck.children);
+    const cardsByRank = {};
+    Array.from(cardDeck.children).forEach(card => {
+        const rank = card.dataset.rank;
+        if (!cardsByRank[rank]) {
+            cardsByRank[rank] = [];
+        }
+        cardsByRank[rank].push(card);
+    });
+
     loader.classList.remove('hidden');
     progressText.textContent = '';
     generateBtn.disabled = true;
@@ -19,9 +27,10 @@ export async function applyTheme(app) {
     printBtn.disabled = true;
 
     let styleDescription = '';
-    const superPrompts = {};
     let successfulCards = 0;
     let failedCards = 0;
+    let totalGenerated = 0;
+    const totalCards = 52;
 
     try {
         progressText.textContent = 'Generating art style guide...';
@@ -30,6 +39,8 @@ export async function applyTheme(app) {
         const descriptionCompletion = await safeChatCompletion([{ role: 'user', content: stylePrompt }]);
         styleDescription = descriptionCompletion.content;
         console.log('Generated style description:', styleDescription);
+        
+        await sleep(500);
 
         for (const rank of ranks) {
              const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || `the number ${rank}`;
@@ -50,40 +61,37 @@ export async function applyTheme(app) {
             `;
 
             const completion = await safeChatCompletion([{ role: 'user', content: superPromptGenMessage }]);
-            superPrompts[rank] = completion.content;
-            console.log(`Super prompt for ${rank}:`, superPrompts[rank]);
+            const superPrompt = completion.content;
+            console.log(`Super prompt for ${rank}:`, superPrompt);
             await sleep(500);
-        }
-
-        for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            const cardNumber = i + 1;
-            const rank = card.dataset.rank;
-            const suit = card.dataset.suit;
-            const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
-
-            progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
             
-            let finalPrompt = superPrompts[rank];
-            const suitConcept = `a prominent, stylized ${suitSymbols[suit]} ${suit} symbol`;
-            finalPrompt = finalPrompt.replace(/\[SUIT_CONCEPT\]/g, suitConcept);
-            finalPrompt += `. The image must strictly adhere to this art style: "${styleDescription}"`;
+            const cardsForRank = cardsByRank[rank] || [];
+            for (const card of cardsForRank) {
+                totalGenerated++;
+                const suit = card.dataset.suit;
+                progressText.textContent = `Generating card ${totalGenerated} of ${totalCards}... (${successfulCards} successful, ${failedCards} failed)`;
+                
+                let finalPrompt = superPrompt;
+                const suitConcept = `a prominent, stylized ${suitSymbols[suit]} ${suit} symbol`;
+                finalPrompt = finalPrompt.replace(/\[SUIT_CONCEPT\]/g, suitConcept);
+                finalPrompt += `. The image must strictly adhere to this art style: "${styleDescription}"`;
 
-            try {
-                if (i > 0) await sleep(800);
-                const result = await safeImageGeneration(finalPrompt);
-                console.log(`Generated ${rankName} of ${suit}:`, result.url);
-                let centerSuit = card.querySelector('.center-suit');
-                if (centerSuit) {
-                    centerSuit.innerHTML = `<img src="${result.url}" alt="Themed art for ${rank} of ${suit}">`;
-                    successfulCards++;
-                }
-            } catch (cardError) {
-                console.error(`Error generating image for ${rankName} of ${suit}:`, cardError);
-                failedCards++;
-                let centerSuit = card.querySelector('.center-suit');
-                if (centerSuit) {
-                    centerSuit.innerHTML = `<span title="Generation failed: ${cardError.message}">⚠️</span>`;
+                try {
+                    const result = await safeImageGeneration(finalPrompt);
+                    console.log(`Generated ${rankName} of ${suit}:`, result.url);
+                    let centerSuit = card.querySelector('.center-suit');
+                    if (centerSuit) {
+                        centerSuit.innerHTML = `<img src="${result.url}" alt="Themed art for ${rank} of ${suit}">`;
+                        successfulCards++;
+                    }
+                    if (totalGenerated < totalCards) await sleep(800);
+                } catch (cardError) {
+                    console.error(`Error generating image for ${rankName} of ${suit}:`, cardError);
+                    failedCards++;
+                    let centerSuit = card.querySelector('.center-suit');
+                    if (centerSuit) {
+                        centerSuit.innerHTML = `<span title="Generation failed: ${cardError.message}">⚠️</span>`;
+                    }
                 }
             }
         }
