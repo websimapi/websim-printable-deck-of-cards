@@ -286,7 +286,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let styleDescription = '';
         let successfulCards = 0;
         let failedCards = 0;
-        let useBasicStyle = false; // Fallback flag
 
         try {
             // 1. Find and generate the Ace of Hearts first to establish a style
@@ -313,69 +312,57 @@ document.addEventListener('DOMContentLoaded', () => {
                 successfulCards++;
             }
 
-            // 2. Try to analyze the image for style consistency, but continue if it fails
-            try {
-                progressText.textContent = 'Uploading image for analysis...';
-                
-                // Fetch the generated image and convert to blob with error handling
-                const imageBlob = await safeImageFetch(imageUrl);
-                console.log('Downloaded image blob, size:', imageBlob.size);
-                
-                // Create a file from the blob
-                const timestamp = Date.now();
-                const imageFile = new File([imageBlob], `ace_of_hearts_${timestamp}.png`, { type: 'image/png' });
-                
-                // Upload to database with retry logic
-                const uploadedUrl = await safeFileUpload(imageFile);
-                console.log('Uploaded image to:', uploadedUrl);
+            // 2. Analyze the image for style consistency - this is now critical and cannot be skipped
+            progressText.textContent = 'Uploading image for analysis...';
+            
+            // Fetch the generated image and convert to blob with error handling
+            const imageBlob = await safeImageFetch(imageUrl);
+            console.log('Downloaded image blob, size:', imageBlob.size);
+            
+            // Create a file from the blob
+            const timestamp = Date.now();
+            const imageFile = new File([imageBlob], `ace_of_hearts_${timestamp}.png`, { type: 'image/png' });
+            
+            // Upload to database with retry logic
+            const uploadedUrl = await safeFileUpload(imageFile);
+            console.log('Uploaded image to:', uploadedUrl);
 
-                // Add delay before AI analysis
-                await sleep(1000);
+            // Add delay before AI analysis
+            await sleep(1000);
 
-                // 3. Get a detailed description of the generated image using the uploaded URL
-                progressText.textContent = 'Analyzing art style...';
-                
-                const messages = [{
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts). Keep it concise but detailed.' },
-                        { type: 'image_url', image_url: { url: uploadedUrl } },
-                    ],
-                }];
+            // 3. Get a detailed description of the generated image using the uploaded URL
+            progressText.textContent = 'Analyzing art style...';
+            
+            const messages = [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts). Keep it concise but detailed.' },
+                    { type: 'image_url', image_url: { url: uploadedUrl } },
+                ],
+            }];
 
-                console.log('About to call safeChatCompletion with uploaded URL:', uploadedUrl);
-                const descriptionCompletion = await safeChatCompletion(messages);
-                styleDescription = descriptionCompletion.content;
-                console.log('Generated style description:', styleDescription);
-
-            } catch (analysisError) {
-                console.warn('Style analysis failed, using basic theme approach:', analysisError.message);
-                useBasicStyle = true;
-                styleDescription = `Simple, clean icons with a "${theme}" theme, maintaining consistent style and color palette`;
-                
-                progressText.textContent = 'Style analysis failed, using basic theme approach...';
-                await sleep(1000);
-            }
+            console.log('About to call safeChatCompletion with uploaded URL:', uploadedUrl);
+            const descriptionCompletion = await safeChatCompletion(messages);
+            styleDescription = descriptionCompletion.content;
+            console.log('Generated style description:', styleDescription);
 
             // Add delay before starting batch generation
             await sleep(1500);
 
-            // 4. Generate the rest of the cards one by one
+            // 4. Generate the rest of the cards one by one using style-guided approach
             const otherCards = cards.filter(c => !(c.dataset.suit === 'hearts' && c.dataset.rank === 'A'));
             
             for (let i = 0; i < otherCards.length; i++) {
                 const card = otherCards[i];
                 const cardNumber = i + 2;
-                progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed) ${useBasicStyle ? '[Basic Mode]' : '[Style-Guided]'}`;
+                progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
 
                 const rank = card.dataset.rank;
                 const suit = card.dataset.suit;
                 const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
                 
-                // Use different prompt styles based on whether we have style analysis
-                const subsequentPrompt = useBasicStyle 
-                    ? `Simple, centered icon representing the ${rankName} of ${suit}, with a "${theme}" theme. Clean lines, vector style icon, no text. Consistent with previous cards.`
-                    : `A centered icon of the ${rankName} of ${suit}. The art must follow this style guide: "${styleDescription}"`;
+                // Always use style-guided prompts
+                const subsequentPrompt = `A centered icon of the ${rankName} of ${suit}. The art must follow this style guide: "${styleDescription}"`;
 
                 try {
                     // Add delay between requests to avoid rate limiting
@@ -403,27 +390,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            const modeText = useBasicStyle ? ' (Basic Mode)' : ' (Style-Guided)';
-            const finalMessage = `Generation Complete${modeText}! ${successfulCards} successful, ${failedCards} failed.`;
+            const finalMessage = `Generation Complete! ${successfulCards} successful, ${failedCards} failed.`;
             progressText.textContent = finalMessage;
             console.log(finalMessage);
 
-            if (failedCards > 0 || useBasicStyle) {
+            if (failedCards > 0) {
                 // Show status info
                 const statusDetails = [
-                    `Theme Generation ${useBasicStyle ? 'Warning - Style Analysis Failed' : 'Info'}`,
-                    `Mode: ${useBasicStyle ? 'Basic (no style analysis)' : 'Style-Guided'}`,
+                    `Theme Generation Complete`,
                     `Successful Cards: ${successfulCards}`,
                     `Failed Cards: ${failedCards}`,
                     `Theme: ${theme}`,
-                    `Style Description: ${styleDescription || 'None'}`,
+                    `Style Description: ${styleDescription}`,
                     `Browser: ${navigator.userAgent}`,
                     `Timestamp: ${new Date().toISOString()}`,
-                    useBasicStyle ? 'Note: AI style analysis failed, used basic prompts instead' : 'Note: Some cards may have failed generation'
+                    'Note: Some cards may have failed generation'
                 ].join('\n');
                 
-                const color = useBasicStyle ? '#856404' : (failedCards > 0 ? '#856404' : '#28a745');
-                const icon = useBasicStyle ? 'ℹ️' : (failedCards > 0 ? '⚠️' : '✅');
+                const color = failedCards > 0 ? '#856404' : '#28a745';
+                const icon = failedCards > 0 ? '⚠️' : '✅';
                 progressText.innerHTML = `<span style="color: ${color}; cursor: pointer; text-decoration: underline;" onclick="copyErrorToClipboard('${statusDetails.replace(/'/g, "\\'")}');">${icon} Click for details</span>`;
             }
 
@@ -438,7 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `Successful Cards: ${successfulCards}`,
                 `Failed Cards: ${failedCards}`,
                 `Style Description: ${styleDescription || 'Not generated yet'}`,
-                `Using Basic Style: ${useBasicStyle}`,
                 `Browser: ${navigator.userAgent}`,
                 `Timestamp: ${new Date().toISOString()}`,
                 `Console Logs: Check browser console for additional WebSocket, network, or API errors`
