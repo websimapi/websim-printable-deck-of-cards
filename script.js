@@ -253,14 +253,13 @@ document.addEventListener('DOMContentLoaded', () => {
         card.dataset.rank = rank;
 
         const suitSymbol = suitSymbols[suit];
-        const isFaceCard = ['J', 'Q', 'K'].includes(rank);
-
+        
         card.innerHTML = `
             <div class="corner top-left">
                 <div class="rank">${rank}</div>
                 <div class="suit">${suitSymbol}</div>
             </div>
-            <div class="center-suit">${isFaceCard ? rank : suitSymbol}</div>
+            <div class="center-suit">${suitSymbol}</div>
             <div class="corner bottom-right">
                 <div class="rank">${rank}</div>
                 <div class="suit">${suitSymbol}</div>
@@ -285,15 +284,12 @@ document.addEventListener('DOMContentLoaded', () => {
         printBtn.disabled = true;
 
         let styleDescription = '';
+        const superPrompts = {}; // To store the base prompt for each rank
         let successfulCards = 0;
         let failedCards = 0;
 
         try {
-            // REDESIGNED FLOW:
-            // 1. Generate a text-based art style guide first.
-            // 2. Use that guide to generate all 52 cards sequentially.
-            // This removes the fragile image-analysis step.
-
+            // STAGE 1: Generate a single art style guide for the whole deck.
             progressText.textContent = 'Generating art style guide...';
             console.log('Generating art style for theme:', theme);
             
@@ -303,33 +299,60 @@ document.addEventListener('DOMContentLoaded', () => {
             styleDescription = descriptionCompletion.content;
             console.log('Generated style description:', styleDescription);
 
-            // Add a short delay before batch generation
-            await sleep(1000);
+            // STAGE 2: Generate a "super prompt" concept for each rank.
+            for (const rank of ranks) {
+                 const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || `the number ${rank}`;
+                 progressText.textContent = `Generating concept for ${rankName}...`;
 
-            // 2. Generate all cards using the style-guided approach
+                 const superPromptGenMessage = `
+                    You are a creative assistant for generating playing card art.
+                    The user's theme is: "${theme}".
+                    The overall art style is: "${styleDescription}".
+
+                    Your task is to create a detailed "super prompt" for the "${rankName}" card. This prompt will be used to generate an image.
+                    - The prompt should describe a visual concept for the card that fits the theme and style.
+                    - CRUCIALLY, the prompt must be suit-agnostic. It must include the placeholder "[SUIT_CONCEPT]" where a visual representation of the suit (e.g., "a glowing heart", "two magic wands in the shape of a diamond") should be incorporated.
+                    - The prompt should NOT contain any text or letters to be rendered in the image.
+                    - The final prompt should be a single, coherent paragraph focused on visual description.
+
+                    Now, create the super prompt for the "${rankName}" card.
+                `;
+
+                const completion = await safeChatCompletion([{ role: 'user', content: superPromptGenMessage }]);
+                superPrompts[rank] = completion.content;
+                console.log(`Super prompt for ${rank}:`, superPrompts[rank]);
+                await sleep(500); // Small delay between concept generations
+            }
+
+            // STAGE 3: Generate all 52 cards using the style guide and super prompts.
             for (let i = 0; i < cards.length; i++) {
                 const card = cards[i];
                 const cardNumber = i + 1;
-                progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
-
                 const rank = card.dataset.rank;
                 const suit = card.dataset.suit;
                 const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
+
+                progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
                 
-                const subsequentPrompt = `A simple, centered icon representing the ${rankName} of ${suit}. Art style must strictly follow this guide: "${styleDescription}". No text or letters.`;
+                let finalPrompt = superPrompts[rank];
+                
+                // Create a suit-specific concept to insert into the super prompt
+                const suitConcept = `a prominent, stylized ${suitSymbols[suit]} ${suit} symbol`;
+                
+                // Replace the placeholder with the actual suit concept
+                finalPrompt = finalPrompt.replace(/\[SUIT_CONCEPT\]/g, suitConcept);
+                // Reinforce the style guide
+                finalPrompt += `. The image must strictly adhere to this art style: "${styleDescription}"`;
 
                 try {
-                    // Add delay between requests to avoid rate limiting
-                    if (i > 0) {
-                        await sleep(800);
-                    }
+                    if (i > 0) await sleep(800);
 
-                    const result = await safeImageGeneration(subsequentPrompt);
+                    const result = await safeImageGeneration(finalPrompt);
                     console.log(`Generated ${rankName} of ${suit}:`, result.url);
 
                     let centerSuit = card.querySelector('.center-suit');
                     if (centerSuit) {
-                        centerSuit.innerHTML = `<img src="${result.url}" alt="Themed card art for ${rank} of ${suit}">`;
+                        centerSuit.innerHTML = `<img src="${result.url}" alt="Themed art for ${rank} of ${suit}">`;
                         successfulCards++;
                     }
                 } catch (cardError) {
