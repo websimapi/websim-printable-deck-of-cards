@@ -177,8 +177,8 @@ header p {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 60%;
-    height: 60%;
+    width: 80%;
+    height: 80%;
 }
 
 .center-suit img {
