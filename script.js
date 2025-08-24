@@ -289,92 +289,45 @@ document.addEventListener('DOMContentLoaded', () => {
         let failedCards = 0;
 
         try {
-            // 1. Find and generate the Ace of Hearts first to establish a style
-            const aceOfHeartsCard = cards.find(c => c.dataset.suit === 'hearts' && c.dataset.rank === 'A');
-            if (!aceOfHeartsCard) {
-                throw new Error("Could not find the Ace of Hearts card to start theme generation.");
-            }
+            // REDESIGNED FLOW:
+            // 1. Generate a text-based art style guide first.
+            // 2. Use that guide to generate all 52 cards sequentially.
+            // This removes the fragile image-analysis step.
 
-            progressText.textContent = 'Generating style leader (Ace of Hearts)...';
-            console.log('Starting theme generation with:', theme);
+            progressText.textContent = 'Generating art style guide...';
+            console.log('Generating art style for theme:', theme);
             
-            const aceRankName = 'Ace';
-            const aceSuit = 'hearts';
-            const initialPrompt = `Simple, centered icon representing the ${aceRankName} of ${aceSuit}, with a "${theme}" theme. Clean lines, vector style icon, no text.`;
+            const stylePrompt = `Create a concise but detailed art style guide for a deck of cards with the theme "${theme}". Describe the color palette, line style, and overall mood. The style should be suitable for simple, iconic card art. Example: "Minimalist vector art, thick outlines, limited color palette of dark blue, gold, and white, with a sophisticated and mystical mood."`;
             
-            // Generate initial image with retry logic
-            const imageResult = await safeImageGeneration(initialPrompt);
-            const imageUrl = imageResult.url;
-            console.log('Generated Ace of Hearts image:', imageUrl);
-
-            let centerSuit = aceOfHeartsCard.querySelector('.center-suit');
-            if (centerSuit) {
-                centerSuit.innerHTML = `<img src="${imageUrl}" alt="Themed card art for Ace of Hearts">`;
-                successfulCards++;
-            }
-
-            // 2. Analyze the image for style consistency - this is now critical and cannot be skipped
-            progressText.textContent = 'Uploading image for analysis...';
-            
-            // Fetch the generated image and convert to blob with error handling
-            const imageBlob = await safeImageFetch(imageUrl);
-            console.log('Downloaded image blob, size:', imageBlob.size);
-            
-            // Create a file from the blob
-            const timestamp = Date.now();
-            const imageFile = new File([imageBlob], `ace_of_hearts_${timestamp}.png`, { type: 'image/png' });
-            
-            // Upload to database with retry logic
-            const uploadedUrl = await safeFileUpload(imageFile);
-            console.log('Uploaded image to:', uploadedUrl);
-
-            // Add a longer delay before AI analysis to ensure file is ready
-            await sleep(3000);
-
-            // 3. Get a detailed description of the generated image using the uploaded URL
-            progressText.textContent = 'Analyzing art style...';
-            
-            const messages = [{
-                role: 'user',
-                content: [
-                    { type: 'text', text: 'Describe the art style of this image for a consistent theme. Focus on style, color palette, and line work. Be concise.' },
-                    { type: 'image_url', image_url: { url: uploadedUrl } },
-                ],
-            }];
-
-            console.log('About to call safeChatCompletion with uploaded URL:', uploadedUrl);
-            const descriptionCompletion = await safeChatCompletion(messages);
+            const descriptionCompletion = await safeChatCompletion([{ role: 'user', content: stylePrompt }]);
             styleDescription = descriptionCompletion.content;
             console.log('Generated style description:', styleDescription);
 
-            // Add delay before starting batch generation
-            await sleep(1500);
+            // Add a short delay before batch generation
+            await sleep(1000);
 
-            // 4. Generate the rest of the cards one by one using style-guided approach
-            const otherCards = cards.filter(c => !(c.dataset.suit === 'hearts' && c.dataset.rank === 'A'));
-            
-            for (let i = 0; i < otherCards.length; i++) {
-                const card = otherCards[i];
-                const cardNumber = i + 2;
+            // 2. Generate all cards using the style-guided approach
+            for (let i = 0; i < cards.length; i++) {
+                const card = cards[i];
+                const cardNumber = i + 1;
                 progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
 
                 const rank = card.dataset.rank;
                 const suit = card.dataset.suit;
                 const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
                 
-                // Always use style-guided prompts
-                const subsequentPrompt = `A centered icon of the ${rankName} of ${suit}. The art must follow this style guide: "${styleDescription}"`;
+                const subsequentPrompt = `A simple, centered icon representing the ${rankName} of ${suit}. Art style must strictly follow this guide: "${styleDescription}". No text or letters.`;
 
                 try {
                     // Add delay between requests to avoid rate limiting
                     if (i > 0) {
-                        await sleep(800); // Staggered delay
+                        await sleep(800);
                     }
 
                     const result = await safeImageGeneration(subsequentPrompt);
                     console.log(`Generated ${rankName} of ${suit}:`, result.url);
 
-                    centerSuit = card.querySelector('.center-suit');
+                    let centerSuit = card.querySelector('.center-suit');
                     if (centerSuit) {
                         centerSuit.innerHTML = `<img src="${result.url}" alt="Themed card art for ${rank} of ${suit}">`;
                         successfulCards++;
@@ -383,8 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error(`Error generating image for ${rankName} of ${suit}:`, cardError);
                     failedCards++;
                     
-                    // Add a more informative placeholder on error
-                    centerSuit = card.querySelector('.center-suit');
+                    let centerSuit = card.querySelector('.center-suit');
                     if (centerSuit) {
                         centerSuit.innerHTML = `<span title="Generation failed: ${cardError.message}">⚠️</span>`;
                     }
