@@ -19,6 +19,108 @@ document.addEventListener('DOMContentLoaded', () => {
     // Utility functions for error handling and retries
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    // Function to copy error details to clipboard
+    async function copyErrorToClipboard(errorDetails) {
+        try {
+            const errorText = `Error Report:\n\n${errorDetails}\n\nGenerated at: ${new Date().toISOString()}`;
+            await navigator.clipboard.writeText(errorText);
+            
+            // Show a temporary notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #28a745;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 6px;
+                z-index: 1000;
+                font-family: inherit;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            `;
+            notification.textContent = 'Error details copied to clipboard!';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 3000);
+        } catch (clipboardError) {
+            console.error('Failed to copy to clipboard:', clipboardError);
+            // Fallback: create a text area for manual copying
+            createErrorTextArea(errorDetails);
+        }
+    }
+
+    function createErrorTextArea(errorDetails) {
+        const errorText = `Error Report:\n\n${errorDetails}\n\nGenerated at: ${new Date().toISOString()}`;
+        
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        `;
+        
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 80vh;
+            overflow: auto;
+        `;
+        
+        const title = document.createElement('h3');
+        title.textContent = 'Error Details (Copy this text)';
+        title.style.marginTop = '0';
+        
+        const textarea = document.createElement('textarea');
+        textarea.value = errorText;
+        textarea.style.cssText = `
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        `;
+        textarea.select();
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        closeBtn.style.cssText = `
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        `;
+        closeBtn.onclick = () => document.body.removeChild(overlay);
+        
+        modal.appendChild(title);
+        modal.appendChild(textarea);
+        modal.appendChild(closeBtn);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+    }
+
     async function withRetry(fn, maxRetries = 3, baseDelay = 1000) {
         let lastError;
         
@@ -281,14 +383,45 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(finalMessage);
 
             if (failedCards > 0) {
-                alert(`Theme generation completed with some issues.\n${successfulCards} cards generated successfully.\n${failedCards} cards failed to generate.\n\nCheck console for detailed error information.`);
+                // Remove alert, instead show clickable error info
+                const warningDetails = [
+                    `Theme Generation Warning`,
+                    `Successful Cards: ${successfulCards}`,
+                    `Failed Cards: ${failedCards}`,
+                    `Theme: ${theme}`,
+                    `Browser: ${navigator.userAgent}`,
+                    `Timestamp: ${new Date().toISOString()}`,
+                    `Note: Some cards failed to generate. Check individual card errors in console.`
+                ].join('\n');
+                
+                progressText.innerHTML = `<span style="color: #856404; cursor: pointer; text-decoration: underline;" onclick="copyErrorToClipboard('${warningDetails.replace(/'/g, "\\'")}')">⚠️ ${failedCards} cards failed. Click to copy details.</span>`;
             }
 
         } catch (error) {
             console.error("Critical error during theme generation:", error);
-            const errorMessage = `Sorry, there was a critical error generating the card art. Please try again.\n\nError details:\n${error.message}\n\nTechnical info: Check browser console for full details.`;
-            alert(errorMessage);
-            progressText.textContent = `Critical error: ${error.message}`;
+            
+            // Collect detailed error information
+            const errorDetails = [
+                `Critical Error: ${error.message}`,
+                `Error Stack: ${error.stack || 'No stack trace available'}`,
+                `Theme: ${theme}`,
+                `Successful Cards: ${successfulCards}`,
+                `Failed Cards: ${failedCards}`,
+                `Style Description: ${styleDescription || 'Not generated yet'}`,
+                `Browser: ${navigator.userAgent}`,
+                `Timestamp: ${new Date().toISOString()}`,
+                `Console Logs: Check browser console for additional WebSocket, network, or API errors`
+            ].join('\n');
+            
+            progressText.textContent = `Critical error occurred. Click to copy details for support.`;
+            progressText.style.cursor = 'pointer';
+            progressText.style.textDecoration = 'underline';
+            progressText.style.color = '#dc3545';
+            progressText.onclick = () => copyErrorToClipboard(errorDetails);
+            
+            // Also copy automatically
+            copyErrorToClipboard(errorDetails);
+            
         } finally {
             loader.classList.add('hidden');
             generateBtn.disabled = false;
