@@ -15,8 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeInput = document.getElementById('theme-input');
     const loader = document.getElementById('loader');
     const progressText = document.getElementById('progress-text');
-    const scaleSlider = document.getElementById('scale-slider');
-    const scaleControl = document.querySelector('.scale-control');
 
     // Utility functions for error handling and retries
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -123,6 +121,35 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(overlay);
     }
 
+    async function runPromisesWithConcurrency(promiseFns, concurrency, onProgress) {
+        const results = new Array(promiseFns.length);
+        let completedCount = 0;
+        let index = 0;
+    
+        async function worker() {
+            while (index < promiseFns.length) {
+                const currentIndex = index++;
+                const promiseFn = promiseFns[currentIndex];
+                if (promiseFn) {
+                    try {
+                        results[currentIndex] = await promiseFn();
+                    } catch (error) {
+                        results[currentIndex] = { error }; // Wrap error for identification
+                    } finally {
+                        completedCount++;
+                        if (onProgress) {
+                            onProgress(completedCount, promiseFns.length);
+                        }
+                    }
+                }
+            }
+        }
+    
+        const workers = Array.from({ length: concurrency }, worker);
+        await Promise.all(workers);
+        return results;
+    }
+
     async function withRetry(fn, maxRetries = 3, baseDelay = 1000) {
         let lastError;
         
@@ -146,56 +173,6 @@ document.addEventListener('DOMContentLoaded', () => {
         throw lastError;
     }
 
-    // --- Local Storage Functions ---
-    function saveDeckToLocalStorage(deckData) {
-        try {
-            localStorage.setItem('savedDeck', JSON.stringify(deckData));
-        } catch (e) {
-            console.error("Failed to save deck to localStorage:", e);
-        }
-    }
-
-    function loadDeckFromLocalStorage() {
-        try {
-            const savedDeckJSON = localStorage.getItem('savedDeck');
-            if (savedDeckJSON) {
-                return JSON.parse(savedDeckJSON);
-            }
-        } catch (e) {
-            console.error("Failed to load deck from localStorage:", e);
-            localStorage.removeItem('savedDeck'); // Clear corrupted data
-        }
-        return null;
-    }
-
-    function clearSavedDeck() {
-        localStorage.removeItem('savedDeck');
-        console.log("Saved deck cleared from localStorage.");
-    }
-    
-    // --- Image Scale Functions ---
-    function applyImageScale(scale) {
-        document.documentElement.style.setProperty('--card-image-scale', scale);
-    }
-
-    function saveImageScale(scale) {
-        localStorage.setItem('cardImageScale', scale);
-    }
-
-    function loadImageScale() {
-        const savedScale = localStorage.getItem('cardImageScale');
-        if (savedScale) {
-            scaleSlider.value = savedScale;
-            applyImageScale(savedScale);
-        }
-    }
-    
-    scaleSlider.addEventListener('input', (e) => {
-        const newScale = e.target.value;
-        applyImageScale(newScale);
-        saveImageScale(newScale);
-    });
-
     async function safeImageGeneration(prompt, retries = 3) {
         return await withRetry(async () => {
             try {
@@ -212,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 throw new Error(`Image generation failed: ${error.message}`);
             }
-        }, retries, 1000);
+        }, retries, 2000);
     }
 
     async function safeFileUpload(file, retries = 3) {
@@ -243,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const completion = await websim.chat.completions.create({
                     model: "gpt-4o", // Explicitly use a multimodal model
                     messages: messages,
+                    json: messages.some(m => m.json === true), // Pass json flag if requested
                 });
                 
                 console.log('Chat completion successful, response:', completion);
@@ -288,34 +266,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateDeck() {
         cardDeck.innerHTML = ''; // Clear existing cards
-        const savedDeck = loadDeckFromLocalStorage();
-        let hasArt = false;
-        
-        if (savedDeck && savedDeck.theme) {
-            themeInput.value = savedDeck.theme;
-        }
 
         for (const suit of suits) {
             for (const rank of ranks) {
                 const card = createCardElement(suit, rank);
-                
-                // Check for saved art
-                if (savedDeck && savedDeck.cards) {
-                    const cardData = savedDeck.cards[`${rank}-${suit}`];
-                    if (cardData && cardData.imageUrl) {
-                        const centerSuit = card.querySelector('.center-suit');
-                        centerSuit.innerHTML = `<img src="${cardData.imageUrl}" alt="Themed art for ${rank} of ${suit}">`;
-                        hasArt = true;
-                    }
-                }
                 cardDeck.appendChild(card);
             }
-        }
-        
-        if (hasArt) {
-            scaleControl.classList.remove('hidden');
-        } else {
-            scaleControl.classList.add('hidden');
         }
     }
 
@@ -358,10 +314,9 @@ document.addEventListener('DOMContentLoaded', () => {
         printBtn.disabled = true;
 
         let styleDescription = '';
-        const superPrompts = {}; // To store the base prompt for each rank
+        let superPrompts = {};
         let successfulCards = 0;
         let failedCards = 0;
-        const generatedCardsData = {}; // To store results for localStorage
 
         try {
             // STAGE 1: Generate a single art style guide for the whole deck.
@@ -374,85 +329,70 @@ document.addEventListener('DOMContentLoaded', () => {
             styleDescription = descriptionCompletion.content;
             console.log('Generated style description:', styleDescription);
 
-            // STAGE 2: Generate a "super prompt" concept for each rank.
-            for (const rank of ranks) {
-                 const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || `the number ${rank}`;
-                 progressText.textContent = `Generating concept for ${rankName}...`;
+            // STAGE 2: Generate all "super prompt" concepts for each rank in a single call.
+            progressText.textContent = 'Generating concepts for all cards...';
+            const rankNames = { 'A': 'Ace', '2': 'Two', '3': 'Three', '4': 'Four', '5': 'Five', '6': 'Six', '7': 'Seven', '8': 'Eight', '9': 'Nine', '10': 'Ten', 'J': 'Jack', 'Q': 'Queen', 'K': 'King' };
 
-                 const superPromptGenMessage = `
-                    You are a creative assistant for generating playing card art.
-                    The user's theme is: "${theme}".
-                    The overall art style is: "${styleDescription}".
+            const superPromptGenMessage = {
+                role: 'user',
+                json: true,
+                content: `
+You are a creative assistant for generating playing card art.
+The user's theme is: "${theme}".
+The overall art style is: "${styleDescription}".
 
-                    Your task is to create a detailed "super prompt" for the "${rankName}" card. This prompt will be used to generate an image.
-                    - The prompt should describe a visual concept for the card that fits the theme and style.
-                    - CRUCIALLY, the prompt must be suit-agnostic. It must include the placeholder "[SUIT_CONCEPT]" where a visual representation of the suit (e.g., "a glowing heart", "two magic wands in the shape of a diamond") should be incorporated.
-                    - The prompt should NOT contain any text or letters to be rendered in the image.
-                    - The final prompt should be a single, coherent paragraph focused on visual description.
+Your task is to create a detailed "super prompt" for EACH card rank (A, 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K). This prompt will be used to generate an image.
 
-                    Now, create the super prompt for the "${rankName}" card.
-                `;
+- The prompt for each rank should describe a unique visual concept that fits the theme and style.
+- CRUCIALLY, each prompt must be suit-agnostic. It must include the placeholder "[SUIT_CONCEPT]" where a visual representation of the suit should be incorporated.
+- The prompt must NOT contain any text or letters to be rendered in the image.
+- The final prompt for each rank should be a single, coherent paragraph focused on visual description.
 
-                const completion = await safeChatCompletion([{ role: 'user', content: superPromptGenMessage }]);
-                superPrompts[rank] = completion.content;
-                console.log(`Super prompt for ${rank}:`, superPrompts[rank]);
-                await sleep(500); // Small delay between concept generations
-            }
+Respond directly with a single JSON object. The keys should be the rank characters ('A', '2', '..._EXISTING_RANKS_...', 'K') and the values should be the generated super prompts.
+Example for a 'cats' theme:
+{
+  "A": "A majestic cat monarch sitting on a throne, with a large [SUIT_CONCEPT] emblem on the tapestry behind it. Regal, powerful, and detailed.",
+  "2": "Two playful kittens batting at a ball of yarn that unravels to form the shape of a [SUIT_CONCEPT]."
+}
+`,
+            };
 
-            // STAGE 3: Generate all 52 cards using the style guide and super prompts.
-            for (let i = 0; i < cards.length; i++) {
-                const card = cards[i];
-                const cardNumber = i + 1;
+            const completion = await safeChatCompletion([superPromptGenMessage]);
+            superPrompts = JSON.parse(completion.content);
+            console.log(`Generated all super prompts:`, superPrompts);
+
+
+            // STAGE 3: Generate all 52 cards in parallel batches.
+            const generationTasks = cards.map(card => async () => {
                 const rank = card.dataset.rank;
                 const suit = card.dataset.suit;
-                const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
-
-                progressText.textContent = `Generating card ${cardNumber} of 52... (${successfulCards} successful, ${failedCards} failed)`;
                 
                 let finalPrompt = superPrompts[rank];
+                if (!finalPrompt) {
+                    throw new Error(`No super prompt found for rank ${rank}`);
+                }
                 
-                // Create a suit-specific concept to insert into the super prompt
                 const suitConcept = `a prominent, stylized ${suitSymbols[suit]} ${suit} symbol`;
-                
-                // Replace the placeholder with the actual suit concept
                 finalPrompt = finalPrompt.replace(/\[SUIT_CONCEPT\]/g, suitConcept);
-                // Reinforce the style guide
                 finalPrompt += `. The image must strictly adhere to this art style: "${styleDescription}"`;
 
-                try {
-                    if (i > 0) await sleep(800);
-
-                    const result = await safeImageGeneration(finalPrompt);
-                    console.log(`Generated ${rankName} of ${suit}:`, result.url);
-                    
-                    // Store for saving
-                    generatedCardsData[`${rank}-${suit}`] = { imageUrl: result.url };
-
-                    let centerSuit = card.querySelector('.center-suit');
-                    if (centerSuit) {
-                        centerSuit.innerHTML = `<img src="${result.url}" alt="Themed art for ${rank} of ${suit}">`;
-                        successfulCards++;
-                    }
-                } catch (cardError) {
-                    console.error(`Error generating image for ${rankName} of ${suit}:`, cardError);
-                    failedCards++;
-                    
-                    let centerSuit = card.querySelector('.center-suit');
-                    if (centerSuit) {
-                        centerSuit.innerHTML = `<span title="Generation failed: ${cardError.message}">⚠️</span>`;
-                    }
+                const result = await safeImageGeneration(finalPrompt);
+                
+                let centerSuit = card.querySelector('.center-suit');
+                if (centerSuit) {
+                    centerSuit.innerHTML = `<img src="${result.url}" alt="Themed art for ${rank} of ${suit}">`;
                 }
-            }
+            });
 
-            if (successfulCards > 0) {
-                 const deckData = {
-                    theme: theme,
-                    style: styleDescription,
-                    cards: generatedCardsData,
-                };
-                saveDeckToLocalStorage(deckData);
-                scaleControl.classList.remove('hidden');
-            }
+            const concurrency = 5; // Generate 5 images at a time
+            await runPromisesWithConcurrency(generationTasks, concurrency, (completed, total) => {
+                const currentSuccessful = completed - failedCards;
+                progressText.textContent = `Generating card ${completed} of ${total}... (${currentSuccessful} successful, ${failedCards} failed)`;
+            });
+
+            // Final count after all tasks are processed
+            successfulCards = cards.filter(c => c.querySelector('.center-suit img')).length;
+            failedCards = 52 - successfulCards;
             
             const finalMessage = `Generation Complete! ${successfulCards} successful, ${failedCards} failed.`;
             progressText.textContent = finalMessage;
@@ -514,14 +454,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     generateBtn.addEventListener('click', applyTheme);
-    
-    resetBtn.addEventListener('click', () => {
-        clearSavedDeck();
-        themeInput.value = '';
-        generateDeck();
-    });
+    resetBtn.addEventListener('click', generateDeck);
 
     // Initial deck generation
-    loadImageScale();
     generateDeck();
 });

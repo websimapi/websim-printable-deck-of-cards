@@ -4,7 +4,6 @@
     --card-width-desktop: 120px;
     --red-suit: #D90429;
     --black-suit: #2B2D42;
-    --card-image-scale: 1; /* New variable for image scaling */
 }
 
 body {
@@ -37,24 +36,6 @@ header p {
     gap: 0.5rem;
     margin-top: 1rem;
     margin-bottom: 1rem;
-}
-
-.scale-control {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background-color: #f8f9fa;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    border: 1px solid #dee2e6;
-}
-
-.scale-control.hidden {
-    display: none;
-}
-
-#scale-slider {
-    cursor: pointer;
 }
 
 #theme-input {
@@ -204,8 +185,6 @@ header p {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    transform: scale(var(--card-image-scale));
-    transition: transform 0.2s ease;
 }
 
 /* Larger screen adjustments */
