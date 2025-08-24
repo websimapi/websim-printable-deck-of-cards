@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetBtn = document.getElementById('reset-btn');
     const themeInput = document.getElementById('theme-input');
     const loader = document.getElementById('loader');
+    const progressText = document.getElementById('progress-text');
 
     function generateDeck() {
         cardDeck.innerHTML = ''; // Clear existing cards
@@ -60,41 +61,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cards = Array.from(document.querySelectorAll('.card'));
         loader.classList.remove('hidden');
+        progressText.textContent = '';
         generateBtn.disabled = true;
         resetBtn.disabled = true;
         printBtn.disabled = true;
 
-        const batchSize = 5; // Process images in smaller batches
+        let styleDescription = '';
 
         try {
-            for (let i = 0; i < cards.length; i += batchSize) {
-                const batch = cards.slice(i, i + batchSize);
-                const imagePromises = batch.map(card => {
-                    const rank = card.dataset.rank;
-                    const suit = card.dataset.suit;
-                    const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
-
-                    const prompt = `Simple, centered icon representing the ${rankName} of ${suit}, with a "${theme}" theme. Clean lines, vector style icon.`;
-
-                    return websim.imageGen({
-                        prompt: prompt,
-                        transparent: true,
-                    }).then(result => ({ card, url: result.url }));
-                });
-
-                const batchResults = await Promise.all(imagePromises);
-
-                batchResults.forEach(({ card, url }) => {
-                    const centerSuit = card.querySelector('.center-suit');
-                    if (centerSuit) {
-                        centerSuit.innerHTML = `<img src="${url}" alt="Themed card art for ${card.dataset.rank} of ${card.dataset.suit}">`;
-                    }
-                });
+            // 1. Find and generate the Ace of Hearts first to establish a style
+            const aceOfHeartsCard = cards.find(c => c.dataset.suit === 'hearts' && c.dataset.rank === 'A');
+            if (!aceOfHeartsCard) {
+                throw new Error("Could not find the Ace of Hearts card to start theme generation.");
             }
+
+            progressText.textContent = 'Generating style leader (Ace of Hearts)...';
+            const aceRankName = 'Ace';
+            const aceSuit = 'hearts';
+            const initialPrompt = `Simple, centered icon representing the ${aceRankName} of ${aceSuit}, with a "${theme}" theme. Clean lines, vector style icon, no text.`;
+            
+            const imageResult = await websim.imageGen({
+                prompt: initialPrompt,
+                transparent: true,
+            });
+            const imageUrl = imageResult.url;
+
+            let centerSuit = aceOfHeartsCard.querySelector('.center-suit');
+            if (centerSuit) {
+                centerSuit.innerHTML = `<img src="${imageUrl}" alt="Themed card art for Ace of Hearts">`;
+            }
+
+            // 2. Get a detailed description of the generated image
+            progressText.textContent = 'Analyzing art style...';
+            const descriptionCompletion = await websim.chat.completions.create({
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts).' },
+                        { type: 'image_url', image_url: { url: imageUrl } },
+                    ],
+                }],
+            });
+            styleDescription = descriptionCompletion.content;
+
+            // 3. Generate the rest of the cards one by one using the style description
+            const otherCards = cards.filter(c => !(c.dataset.suit === 'hearts' && c.dataset.rank === 'A'));
+            
+            for (let i = 0; i < otherCards.length; i++) {
+                const card = otherCards[i];
+                progressText.textContent = `Generating card ${i + 2} of 52...`;
+
+                const rank = card.dataset.rank;
+                const suit = card.dataset.suit;
+                const rankName = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack' }[rank] || rank;
+                
+                const subsequentPrompt = `A centered icon of the ${rankName} of ${suit}. The art must follow this style guide: "${styleDescription}"`;
+
+                try {
+                    const result = await websim.imageGen({
+                        prompt: subsequentPrompt,
+                        transparent: true,
+                    });
+
+                    centerSuit = card.querySelector('.center-suit');
+                    if (centerSuit) {
+                        centerSuit.innerHTML = `<img src="${result.url}" alt="Themed card art for ${rank} of ${suit}">`;
+                    }
+                } catch (cardError) {
+                    console.error(`Error generating image for ${rankName} of ${suit}:`, cardError);
+                    // Add a placeholder or leave the default symbol on error
+                     centerSuit = card.querySelector('.center-suit');
+                     if (centerSuit) {
+                        centerSuit.textContent = '⚠️';
+                     }
+                }
+            }
+             progressText.textContent = 'Generation Complete!';
+
         } catch (error) {
-            console.error("Error generating images:", error);
+            console.error("Error generating themed deck:", error);
             const errorMessage = `Sorry, there was an error generating the card art. Please try again.\n\nError details:\n${error.message}`;
             alert(errorMessage);
+            progressText.textContent = 'An error occurred.';
         } finally {
             loader.classList.add('hidden');
             generateBtn.disabled = false;

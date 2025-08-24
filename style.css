@@ -83,6 +83,10 @@ header p {
     gap: 0.5rem;
 }
 
+#loader p {
+    margin: 0;
+}
+
 #loader.hidden {
     display: none;
 }
