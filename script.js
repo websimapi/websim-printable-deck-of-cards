@@ -91,15 +91,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 centerSuit.innerHTML = `<img src="${imageUrl}" alt="Themed card art for Ace of Hearts">`;
             }
 
-            // 2. Get a detailed description of the generated image by using its URL directly.
-            // No need to download and re-upload the image.
+            // 2. Upload the generated image to database for AI analysis
+            progressText.textContent = 'Uploading image for analysis...';
+            
+            // Fetch the generated image and convert to blob
+            const imageResponse = await fetch(imageUrl);
+            const imageBlob = await imageResponse.blob();
+            
+            // Create a file from the blob
+            const imageFile = new File([imageBlob], 'ace_of_hearts.png', { type: 'image/png' });
+            
+            // Upload to database
+            const uploadedUrl = await websim.upload(imageFile);
+
+            // 2. Get a detailed description of the generated image using the uploaded URL
             progressText.textContent = 'Analyzing art style...';
             const descriptionCompletion = await websim.chat.completions.create({
                 messages: [{
                     role: 'user',
                     content: [
                         { type: 'text', text: 'Describe the art style of this image in a way that can be used to generate other similar images. Focus on style, texture, and color palette, not the subject matter (ace of hearts).' },
-                        { type: 'image_url', image_url: { url: imageUrl } },
+                        { type: 'image_url', image_url: { url: uploadedUrl } },
                     ],
                 }],
             });
